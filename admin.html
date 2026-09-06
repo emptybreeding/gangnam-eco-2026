@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>관리자 · 2026 강남 환경 대전환 페스티벌</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="leafy-bg">
+
+<div class="gate" id="gate">
+  <div class="card">
+    <h2>관리자 확인</h2>
+    <p>운영진만 들어올 수 있어요.</p>
+    <div class="field"><input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password"></div>
+    <p class="error" id="pw-err"></p>
+    <button class="btn" id="enter">들어가기</button>
+  </div>
+</div>
+
+<main class="admin" id="admin" hidden>
+  <div class="admin-head">
+    <div>
+      <h1>한마디 관리</h1>
+      <p>최근 글이 맨 위에 옵니다 · 총 <b id="total">0</b>개</p>
+    </div>
+    <div class="links">
+      <a href="./display.html" target="_blank">전광판 열기</a>
+      <a href="./index.html" target="_blank">참여 페이지</a>
+    </div>
+  </div>
+
+  <div class="sign now-featured" id="now">
+    <div><span class="label">지금 전광판 앞에 띄운 글</span><span class="empty">없음</span></div>
+    <button class="sm sm-hide" id="unfeature" hidden>내리기</button>
+  </div>
+
+  <ul class="list" id="list"></ul>
+  <div class="list-empty" id="list-empty">아직 들어온 글이 없어요.</div>
+</main>
+
+<script type="module">
+  import { ADMIN_PASSWORD } from "./js/config.js";
+  import { watchAll, deleteMessage, setFeatured, watchFeatured } from "./js/db.js";
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // ── 간단 잠금 ──
+  const unlock = () => { $("#gate").hidden = true; $("#admin").hidden = false; sessionStorage.setItem("admin", "1"); start(); };
+  $("#enter").onclick = () => { if ($("#pw").value === ADMIN_PASSWORD) unlock(); else $("#pw-err").textContent = "비밀번호가 맞지 않아요."; };
+  $("#pw").onkeydown = (e) => { if (e.key === "Enter") $("#enter").click(); };
+  if (sessionStorage.getItem("admin") === "1") unlock();
+
+  let items = [], featuredId = null;
+
+  function fmt(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function render() {
+    const list = $("#list");
+    $("#total").textContent = items.length;
+    $("#list-empty").hidden = items.length > 0;
+    list.innerHTML = items.map((m) => `
+      <li class="row ${m.id === featuredId ? "is-featured" : ""}" data-id="${m.id}">
+        <div>
+          <div class="text">${esc(m.text)}</div>
+          <div class="meta"><b>${esc(m.nickname)}</b> · ${fmt(m.createdAt)}</div>
+        </div>
+        <div class="actions">
+          ${m.id === featuredId
+            ? `<button class="sm sm-hide" data-act="unfeature">내리기</button>`
+            : `<button class="sm sm-show" data-act="feature">전광판에 띄우기</button>`}
+          <button class="sm sm-del" data-act="delete">삭제</button>
+        </div>
+      </li>`).join("");
+
+    const cur = items.find((m) => m.id === featuredId);
+    $("#now").querySelector("div").innerHTML =
+      `<span class="label">지금 전광판 앞에 띄운 글</span>` +
+      (cur ? `${esc(cur.text)} <span style="color:var(--honey)">— ${esc(cur.nickname)}</span>` : `<span class="empty">없음</span>`);
+    $("#unfeature").hidden = !cur;
+  }
+
+  $("#list").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const id = btn.closest(".row").dataset.id;
+    const m = items.find((x) => x.id === id);
+    if (btn.dataset.act === "feature") await setFeatured(id);
+    if (btn.dataset.act === "unfeature") await setFeatured(null);
+    if (btn.dataset.act === "delete") {
+      if (confirm(`이 글을 삭제할까요?\n\n"${m.text}" — ${m.nickname}`)) {
+        if (featuredId === id) await setFeatured(null);
+        await deleteMessage(id);
+      }
+    }
+  });
+  $("#unfeature").onclick = () => setFeatured(null);
+
+  function start() {
+    watchAll((list) => { items = list; render(); });
+    watchFeatured((val) => { featuredId = val?.id || null; render(); });
+  }
+</script>
+</body>
+</html>

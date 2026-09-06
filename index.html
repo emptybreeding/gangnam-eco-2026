@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>2026 강남 환경 대전환 페스티벌 · 나의 한마디</title>
+  <meta name="theme-color" content="#0e4b33">
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="leafy-bg">
+<main class="app">
+
+  <!-- 1. 메인 -->
+  <section class="step active" id="step-main">
+    <img class="poster" src="./assets/poster.jpeg" alt="2026 강남 환경 대전환 페스티벌 포스터">
+    <div>
+      <h1 class="event-title">환경 대전환,<br>나의 한마디를 남겨 주세요</h1>
+      <p class="event-meta" id="meta"></p>
+    </div>
+    <button class="btn" id="go-nick">참여하기</button>
+  </section>
+
+  <!-- 2. 닉네임 -->
+  <section class="step" id="step-nick">
+    <div class="card">
+      <h2>어떻게 불러 드릴까요?</h2>
+      <p>전광판에 글과 함께 표시될 닉네임이에요.</p>
+      <div class="field">
+        <input id="nick" type="text" placeholder="예) 꿀벌지킴이" autocomplete="off" inputmode="text">
+        <div class="counter" id="nick-count"></div>
+      </div>
+      <p class="error" id="nick-err"></p>
+      <button class="btn" id="go-msg" disabled>닉네임 정하기</button>
+    </div>
+  </section>
+
+  <!-- 3. 한마디 -->
+  <section class="step" id="step-msg">
+    <div class="card">
+      <h2 id="msg-title"></h2>
+      <p>탄소를 줄이고, 순환을 늘리고, 실천을 더하기 위한 나의 다짐이나 행사에 바라는 점을 적어 주세요.</p>
+      <div class="field">
+        <textarea id="msg" placeholder="예) 오늘부터 텀블러 들고 다닐게요!"></textarea>
+        <div class="counter" id="msg-count"></div>
+      </div>
+      <p class="error" id="msg-err"></p>
+      <button class="btn" id="send">전송하기</button>
+      <button class="btn btn-ghost" id="back-nick">닉네임 다시 정하기</button>
+    </div>
+  </section>
+
+  <!-- 4. 감사 -->
+  <section class="step" id="step-done">
+    <div class="thanks">
+      <div class="bee" aria-hidden="true">🐝</div>
+      <h2>참여해 주셔서 감사합니다</h2>
+      <p>남겨 주신 한마디가 전광판에 올라갑니다.</p>
+      <div class="sign quote" id="echo"></div>
+    </div>
+  </section>
+
+</main>
+
+<script type="module">
+  import { EVENT } from "./js/config.js";
+  import { addMessage } from "./js/db.js";
+
+  const $ = (s) => document.querySelector(s);
+  const steps = ["main", "nick", "msg", "done"].map((k) => $(`#step-${k}`));
+  const show = (i) => { steps.forEach((s, j) => s.classList.toggle("active", i === j)); window.scrollTo(0, 0); };
+
+  $("#meta").textContent = `${EVENT.date} · ${EVENT.place}`;
+  $("#msg-title").textContent = EVENT.question;
+
+  const nick = $("#nick"), nickCount = $("#nick-count"), nickErr = $("#nick-err"), goMsg = $("#go-msg");
+  const msg = $("#msg"), msgCount = $("#msg-count"), msgErr = $("#msg-err"), send = $("#send");
+
+  const clean = (s) => s.replace(/\s+/g, " ").trim();
+
+  function updateNick() {
+    const v = clean(nick.value);
+    nickCount.textContent = `${v.length} / ${EVENT.maxNickname}`;
+    nickCount.classList.toggle("over", v.length > EVENT.maxNickname);
+    goMsg.disabled = !(v.length >= 1 && v.length <= EVENT.maxNickname);
+    nickErr.textContent = "";
+  }
+  function updateMsg() {
+    const v = clean(msg.value);
+    msgCount.textContent = `${v.length} / ${EVENT.maxMessage}`;
+    msgCount.classList.toggle("over", v.length > EVENT.maxMessage);
+    msgErr.textContent = "";
+  }
+  updateNick(); updateMsg();
+
+  $("#go-nick").onclick = () => { show(1); nick.focus(); };
+  nick.oninput = updateNick;
+  nick.onkeydown = (e) => { if (e.key === "Enter" && !goMsg.disabled) goMsg.click(); };
+  goMsg.onclick = () => { sessionStorage.setItem("nick", clean(nick.value)); show(2); msg.focus(); };
+  $("#back-nick").onclick = () => show(1);
+  msg.oninput = updateMsg;
+
+  send.onclick = async () => {
+    const text = clean(msg.value);
+    const name = sessionStorage.getItem("nick") || clean(nick.value);
+    if (!text) { msgErr.textContent = "한마디를 적어 주세요."; msg.focus(); return; }
+    if (text.length > EVENT.maxMessage) { msgErr.textContent = `${EVENT.maxMessage}자 이내로 줄여 주세요.`; return; }
+    send.disabled = true; send.textContent = "보내는 중…";
+    try {
+      await addMessage(name, text);
+      $("#echo").innerHTML = `${escapeHtml(text)}<small>— ${escapeHtml(name)}</small>`;
+      show(3);
+    } catch (err) {
+      console.error(err);
+      msgErr.textContent = "전송에 실패했어요. 네트워크를 확인하고 다시 눌러 주세요.";
+      send.disabled = false; send.textContent = "전송하기";
+    }
+  };
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>전광판 · 2026 강남 환경 대전환 페스티벌</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="leafy-bg">
+<div class="board" id="board">
+  <div class="board-title">
+    <h1>2026 강남 환경<br>대전환 페스티벌</h1>
+    <p id="subtitle"></p>
+  </div>
+  <div class="board-count"><span id="count">0</span><small>개의 한마디</small></div>
+
+  <div class="board-empty" id="empty">QR을 찍고 첫 번째 한마디를 남겨 주세요</div>
+
+  <div class="featured-veil" id="veil"></div>
+  <div class="sign featured" id="featured"></div>
+</div>
+
+<script type="module">
+  import { EVENT, BOARD } from "./js/config.js";
+  import { watchAdded, watchRemoved, watchFeatured } from "./js/db.js";
+
+  document.getElementById("subtitle").textContent = `${EVENT.date} · ${EVENT.place}`;
+
+  const board = document.getElementById("board");
+  const emptyEl = document.getElementById("empty");
+  const countEl = document.getElementById("count");
+  const veil = document.getElementById("veil");
+  const featuredEl = document.getElementById("featured");
+
+  const loadTime = Date.now();
+  const notes = new Map();   // id -> note
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const randInt = (a, b) => Math.round(rand(a, b));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // ── 안전 영역: 제목과 카운터가 있는 상단 좌/우 구역은 피한다 ──
+  const RESERVED = [
+    { x: 0, y: 0, w: 460, h: 140 },
+    { x: () => window.innerWidth - 260, y: 0, w: 260, h: 100 },
+  ];
+  const reservedRects = () => RESERVED.map((r) => ({ x: typeof r.x === "function" ? r.x() : r.x, y: r.y, w: r.w, h: r.h }));
+
+  const overlapArea = (a, b, pad) => {
+    const ix = Math.max(0, Math.min(a.x + a.w + pad, b.x + b.w + pad) - Math.max(a.x - pad, b.x - pad));
+    const iy = Math.max(0, Math.min(a.y + a.h + pad, b.y + b.h + pad) - Math.max(a.y - pad, b.y - pad));
+    return ix * iy;
+  };
+
+  function visibleRects(except) {
+    const rects = reservedRects();
+    for (const n of notes.values()) {
+      if (n === except) continue;
+      if (n.state === "fresh" || n.state === "visible") rects.push(n.rect);
+    }
+    return rects;
+  }
+
+  // 겹치지 않는 무작위 위치를 찾는다. 못 찾으면 가장 덜 겹치는 자리로.
+  function findSpot(w, h, except) {
+    const W = window.innerWidth, H = window.innerHeight, m = 28;
+    const others = visibleRects(except);
+    let best = null, bestOverlap = Infinity;
+    for (let i = 0; i < 80; i++) {
+      const cand = { x: rand(m, Math.max(m, W - w - m)), y: rand(m, Math.max(m, H - h - m)), w, h };
+      let total = 0;
+      for (const r of others) { total += overlapArea(cand, r, BOARD.padding); if (total > bestOverlap) break; }
+      if (total === 0) return cand;
+      if (total < bestOverlap) { bestOverlap = total; best = cand; }
+    }
+    return best;
+  }
+
+  function fontSizeFor(text) {
+    const n = text.length;
+    return n <= 14 ? 30 : n <= 30 ? 26 : n <= 50 ? 23 : 20;
+  }
+
+  function place(n) {
+    const el = n.el;
+    el.style.left = "0px"; el.style.top = "0px";
+    const w = el.offsetWidth, h = el.offsetHeight;
+    n.rect = findSpot(w, h, n);
+    el.style.left = `${n.rect.x}px`;
+    el.style.top = `${n.rect.y}px`;
+    el.style.setProperty("--tilt", `${rand(-3.5, 3.5)}deg`);
+  }
+
+  function clearTimers(n) { n.timers.forEach(clearTimeout); n.timers = []; }
+  const later = (n, fn, sec) => n.timers.push(setTimeout(fn, sec * 1000));
+  const visibleCount = () => [...notes.values()].filter((n) => n.state === "fresh" || n.state === "visible").length;
+
+  // ── 상태 전이 ──
+  function appear(n) {
+    if (n.state === "removing") return;
+    if (visibleCount() >= BOARD.maxVisible) { later(n, () => appear(n), rand(1, 3)); return; }
+    place(n);
+    n.state = "visible";
+    n.el.classList.remove("instant", "fresh", "pop-out");
+    void n.el.offsetWidth;                 // 애니메이션 재시작
+    n.el.classList.add("pop-in");
+    later(n, () => vanish(n), rand(BOARD.showMin, BOARD.showMax));
+  }
+
+  function vanish(n) {
+    if (n.state === "removing") return;
+    n.state = "hidden";
+    n.el.classList.remove("pop-in", "instant", "fresh");
+    n.el.classList.add("pop-out");
+    later(n, () => appear(n), rand(BOARD.hideMin, BOARD.hideMax));
+  }
+
+  function showFresh(n) {
+    place(n);
+    n.state = "fresh";
+    n.el.classList.add("instant", "fresh");
+    later(n, () => vanish(n), BOARD.freshSeconds);
+  }
+
+  // ── Firebase 이벤트 ──
+  watchAdded((data) => {
+    if (notes.has(data.id)) return;
+    const el = document.createElement("div");
+    el.className = "sign note";
+    el.style.fontSize = `${fontSizeFor(data.text)}px`;
+    el.innerHTML = `${esc(data.text)}<span class="nick">— ${esc(data.nickname)}</span>`;
+    board.appendChild(el);
+
+    const n = { id: data.id, data, el, state: "hidden", rect: null, timers: [] };
+    notes.set(data.id, n);
+    updateCount();
+
+    const isFresh = (data.createdAt || 0) >= loadTime - 3000;
+    if (isFresh) showFresh(n);
+    else later(n, () => appear(n), rand(0.2, 6));   // 기존 글은 시차를 두고 등장
+  });
+
+  watchRemoved((id) => {
+    const n = notes.get(id);
+    if (!n) return;
+    clearTimers(n);
+    n.state = "removing";
+    n.el.classList.remove("pop-in", "instant", "fresh");
+    n.el.classList.add("pop-out");
+    setTimeout(() => { n.el.remove(); notes.delete(id); updateCount(); }, 600);
+    if (featuredId === id) renderFeatured(null);
+  });
+
+  let featuredId = null;
+  function renderFeatured(val) {
+    featuredId = val?.id || null;
+    const n = featuredId ? notes.get(featuredId) : null;
+    if (!n) {
+      featuredEl.classList.remove("show"); veil.classList.remove("show");
+      return;
+    }
+    featuredEl.innerHTML = `${esc(n.data.text)}<span class="nick">— ${esc(n.data.nickname)}</span>`;
+    veil.classList.add("show");
+    featuredEl.classList.add("show");
+  }
+  watchFeatured((val) => {
+    // 글 목록이 아직 도착하기 전일 수 있으니 잠시 기다렸다 그린다
+    if (val?.id && !notes.has(val.id)) setTimeout(() => renderFeatured(val), 800);
+    else renderFeatured(val);
+  });
+
+  function updateCount() {
+    countEl.textContent = notes.size;
+    emptyEl.classList.toggle("hide", notes.size > 0);
+  }
+
+  // 창 크기가 바뀌면 보이는 카드만 다시 배치
+  let rt;
+  window.addEventListener("resize", () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { for (const n of notes.values()) if (n.state !== "hidden" && n.state !== "removing") place(n); }, 200);
+  });
+
+  // 전체화면 도움: 화면 더블클릭 → 풀스크린
+  board.addEventListener("dblclick", () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  });
+</script>
+</body>
+</html>
