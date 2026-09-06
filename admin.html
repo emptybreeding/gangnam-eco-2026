@@ -47,7 +47,8 @@
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   // ── 간단 잠금 ──
-  const unlock = () => { $("#gate").hidden = true; $("#admin").hidden = false; sessionStorage.setItem("admin", "1"); start(); };
+  const unlock = () => { $("#gate").hidden = true; $("#admin").hidden = false; sessionStorage.setItem("admin", "1"); window.scrollTo(0, 0); start(); };
+  $("#pw").oninput = () => { $("#pw-err").textContent = ""; };
   $("#enter").onclick = () => { if ($("#pw").value === ADMIN_PASSWORD) unlock(); else $("#pw-err").textContent = "비밀번호가 맞지 않아요."; };
   $("#pw").onkeydown = (e) => { if (e.key === "Enter") $("#enter").click(); };
   if (sessionStorage.getItem("admin") === "1") unlock();
