@@ -27,6 +27,22 @@
   <div class="sign featured" id="featured"></div>
 </div>
 
+<script>
+  // ── 해상도 무관 스케일: 논리 폭 1728px(맥북 16") 기준으로 화면에 맞춰 확대/축소 ──
+  // LED(3840×2400 등) 어디서든 같은 비율로 보인다. 가로세로비는 실제 화면을 따른다.
+  (function () {
+    const LOGICAL_W = 1728, board = document.getElementById("board");
+    function fit() {
+      const s = window.innerWidth / LOGICAL_W;
+      board.style.width = LOGICAL_W + "px";
+      board.style.height = (window.innerHeight / s) + "px";
+      board.style.transform = "scale(" + s + ")";
+    }
+    fit();
+    window.addEventListener("resize", fit);
+  })();
+</script>
+
 <script type="module">
   import { EVENT, BOARD } from "./js/config.js";
   import { watchAdded, watchRemoved, watchFeatured } from "./js/db.js";
@@ -34,6 +50,7 @@
   document.getElementById("subtitle").textContent = `${EVENT.date} · ${EVENT.place}`;
 
   const board = document.getElementById("board");
+  const VW = () => board.clientWidth, VH = () => board.clientHeight;
   const emptyEl = document.getElementById("empty");
   const countEl = document.getElementById("count");
   const veil = document.getElementById("veil");
@@ -47,7 +64,7 @@
 
   // ── 안전 영역: 왼편 패널(타이틀·QR·카운터)은 피한다 ──
   const side = document.getElementById("side");
-  const reservedRects = () => [{ x: 0, y: 0, w: side.offsetWidth, h: window.innerHeight }];
+  const reservedRects = () => [{ x: 0, y: 0, w: side.offsetWidth, h: VH() }];
 
   const overlapArea = (a, b, pad) => {
     const ix = Math.max(0, Math.min(a.x + a.w + pad, b.x + b.w + pad) - Math.max(a.x - pad, b.x - pad));
@@ -66,7 +83,7 @@
 
   // 겹치지 않는 무작위 위치를 찾는다. 못 찾으면 가장 덜 겹치는 자리로.
   function findSpot(w, h, except) {
-    const W = window.innerWidth, H = window.innerHeight, m = 28;
+    const W = VW(), H = VH(), m = 28;
     const x0 = side.offsetWidth + m;            // 왼편 패널 오른쪽부터 배치
     const others = visibleRects(except);
     let best = null, bestOverlap = Infinity;
